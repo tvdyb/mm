@@ -1,0 +1,305 @@
+project:
+  name: "saas-dashboard"
+  repo_path: "/Users/wilson/projects/saas-dashboard"
+  description: "Full-stack SaaS dashboard with Next.js, auth, Stripe billing, and analytics"
+
+settings:
+  max_retries: 2
+  max_turns_per_task: 25
+  checkpoint_every: 3
+  notify_every: 5
+  validation: "auto"
+
+  # Testing loop
+  test_fix_cycles: 3
+  fix_max_turns: 15
+
+  # v2: Parallel execution
+  max_parallel: 3              # run up to 3 independent tasks simultaneously
+
+  # v2: Adaptive replanning
+  replan_every: 8              # DeepSeek re-evaluates plan every 8 completed tasks
+
+  # v2: Semantic review
+  semantic_review: true        # DeepSeek checks output matches spec after each task
+
+  # v2: Cost guardrails
+  task_budget: 5.0             # pause if a single task costs > $5
+  project_budget: 75.0         # pause if total project cost > $75
+  hourly_budget: 15.0          # pause if burn rate exceeds $15/hr
+
+tasks:
+  - id: "init"
+    name: "Initialize Next.js project"
+    prompt: |
+      Create a new Next.js 15 project at {repo_path} with TypeScript and Tailwind CSS.
+      Use the App Router. Set up this folder structure:
+        src/app/ (pages)
+        src/components/ui/ (reusable UI components)
+        src/components/layout/ (layout components)
+        src/lib/ (utilities, db, auth)
+        src/types/ (TypeScript types)
+
+      Install these dependencies:
+      - next, react, react-dom (core)
+      - tailwindcss, postcss, autoprefixer (styling)
+      - lucide-react (icons)
+
+      Create a basic layout with a sidebar navigation placeholder.
+      Initialize git and make an initial commit.
+    depends_on: []
+    validation:
+      command: "cd {repo_path} && npm run build"
+      expect_exit_code: 0
+    max_turns: 15
+    priority: "critical"
+
+  - id: "db-setup"
+    name: "Set up Prisma with SQLite"
+    prompt: |
+      Add Prisma ORM to the project at {repo_path}.
+      Use SQLite for development (easy setup, no external DB needed).
+
+      Create the schema with these models:
+      - User (id, email, name, image, stripeCustomerId, plan, createdAt)
+      - Subscription (id, userId, stripeSubscriptionId, status, plan, currentPeriodEnd)
+      - Project (id, name, description, userId, createdAt, updatedAt)
+      - Event (id, name, properties JSON, projectId, createdAt)
+
+      Run prisma generate and prisma db push.
+      Create a src/lib/db.ts with a singleton Prisma client.
+    depends_on: ["init"]
+    validation:
+      command: "cd {repo_path} && npx prisma validate"
+      expect_exit_code: 0
+    max_turns: 15
+
+  - id: "auth"
+    name: "Add NextAuth.js authentication"
+    prompt: |
+      Add NextAuth.js v5 (next-auth@beta) to {repo_path}.
+
+      Configure:
+      - GitHub OAuth provider
+      - Google OAuth provider
+      - Prisma adapter for session/user storage
+
+      Create:
+      - src/lib/auth.ts with NextAuth config
+      - src/app/api/auth/[...nextauth]/route.ts
+      - src/app/login/page.tsx with a clean login page (GitHub + Google buttons)
+      - src/components/layout/user-menu.tsx (avatar dropdown with sign out)
+      - src/middleware.ts protecting /dashboard/* routes
+
+      Add placeholder env vars to .env.example for GITHUB_ID, GITHUB_SECRET,
+      GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, NEXTAUTH_SECRET.
+    depends_on: ["db-setup"]
+    validations:
+      - command: "cd {repo_path} && npx tsc --noEmit"
+        expect_exit_code: 0
+      - command: "cd {repo_path} && npx next lint"
+        expect_exit_code: 0
+    max_turns: 25
+
+  - id: "layout"
+    name: "Build dashboard layout with sidebar"
+    prompt: |
+      Build the main dashboard layout at {repo_path}.
+
+      Create src/app/dashboard/layout.tsx with:
+      - Collapsible sidebar (lucide icons for each nav item)
+      - Nav items: Overview, Projects, Analytics, Settings, Billing
+      - User menu in bottom of sidebar (from auth task)
+      - Main content area with header showing current page title
+      - Mobile-responsive: sidebar becomes a sheet/drawer on small screens
+
+      Use Tailwind for all styling. Make it look professional and modern.
+      Dark mode support via class strategy.
+    depends_on: ["auth"]
+    validation:
+      command: "cd {repo_path} && npx tsc --noEmit"
+      expect_exit_code: 0
+    max_turns: 20
+
+  - id: "overview-page"
+    name: "Dashboard overview page with stats"
+    prompt: |
+      Create the dashboard overview page at {repo_path}/src/app/dashboard/page.tsx.
+
+      Include:
+      - Stats cards row: Total Projects, Total Events, Active Users, MRR
+      - A line chart showing events over the last 30 days (use recharts)
+      - Recent activity list showing last 10 events
+      - Quick actions: "Create Project", "View Analytics"
+
+      For now, use mock data. Create a src/lib/mock-data.ts with realistic
+      sample data that the page imports.
+
+      Install recharts if not already installed.
+    depends_on: ["layout"]
+    validation:
+      command: "cd {repo_path} && npm run build"
+      expect_exit_code: 0
+    max_turns: 20
+
+  - id: "projects-crud"
+    name: "Projects CRUD with server actions"
+    prompt: |
+      Build full CRUD for Projects at {repo_path}.
+
+      Create:
+      - src/app/dashboard/projects/page.tsx — list view with cards
+      - src/app/dashboard/projects/new/page.tsx — create form
+      - src/app/dashboard/projects/[id]/page.tsx — detail view
+      - src/app/dashboard/projects/[id]/settings/page.tsx — edit/delete
+      - src/lib/actions/projects.ts — server actions for create, update, delete
+
+      Use Prisma for all DB operations. Include proper error handling,
+      loading states, and optimistic updates.
+
+      Projects belong to the authenticated user (filter by session.user.id).
+    depends_on: ["overview-page"]
+    validation:
+      command: "cd {repo_path} && npm run build"
+      expect_exit_code: 0
+    max_turns: 25
+
+  - id: "analytics-page"
+    name: "Analytics dashboard with charts"
+    prompt: |
+      Build the analytics page at {repo_path}/src/app/dashboard/analytics/page.tsx.
+
+      Include:
+      - Date range picker (last 7d, 30d, 90d, custom)
+      - Line chart: events over time
+      - Bar chart: events by project
+      - Pie chart: event types distribution
+      - Data table: top events with sortable columns
+
+      Create a src/lib/actions/analytics.ts with server actions that query
+      the Event model with date filters. Use recharts for all charts.
+      Include proper loading skeletons.
+    depends_on: ["projects-crud"]
+    validation:
+      command: "cd {repo_path} && npm run build"
+      expect_exit_code: 0
+    max_turns: 25
+
+  - id: "stripe-billing"
+    name: "Stripe billing integration"
+    prompt: |
+      Add Stripe billing to {repo_path}.
+      Install stripe and @stripe/stripe-js.
+
+      Create:
+      - src/lib/stripe.ts — Stripe client setup
+      - src/app/api/stripe/webhook/route.ts — webhook handler
+      - src/app/api/stripe/checkout/route.ts — create checkout session
+      - src/app/api/stripe/portal/route.ts — customer portal redirect
+      - src/app/dashboard/billing/page.tsx — billing page with:
+        - Current plan display
+        - Upgrade/downgrade buttons
+        - Usage stats
+        - Invoice history placeholder
+
+      Define 3 plans: Free (0 projects), Pro ($19/mo, 10 projects),
+      Team ($49/mo, unlimited).
+
+      Handle webhook events: checkout.session.completed,
+      customer.subscription.updated, customer.subscription.deleted.
+      Update the Subscription model accordingly.
+
+      Add STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+      to .env.example.
+    depends_on: ["projects-crud"]
+    validation:
+      command: "cd {repo_path} && npx tsc --noEmit"
+      expect_exit_code: 0
+    max_turns: 30
+
+  - id: "settings-page"
+    name: "User settings page"
+    prompt: |
+      Build settings page at {repo_path}/src/app/dashboard/settings/page.tsx.
+
+      Sections:
+      - Profile: name, email (read-only), avatar
+      - Preferences: dark mode toggle, notification settings
+      - API Keys: generate/revoke API keys for the events API
+      - Danger Zone: delete account button with confirmation
+
+      Create server actions in src/lib/actions/settings.ts.
+      Store preferences in a new UserPreferences model or JSON field.
+    depends_on: ["layout"]
+    validation:
+      command: "cd {repo_path} && npm run build"
+      expect_exit_code: 0
+    max_turns: 20
+
+  - id: "events-api"
+    name: "Public events ingestion API"
+    prompt: |
+      Create a public API for ingesting analytics events at {repo_path}.
+
+      Endpoints:
+      - POST /api/v1/events — ingest a single event
+      - POST /api/v1/events/batch — ingest up to 100 events
+
+      Authentication via API key in Authorization header (Bearer <key>).
+      Look up the project by the API key.
+
+      Event schema: { name: string, properties?: object, timestamp?: string }
+
+      Include rate limiting (100 req/min per API key) using in-memory store.
+      Return proper error responses (401, 422, 429).
+
+      Create src/lib/actions/api-keys.ts for key generation (random 32-char hex).
+    depends_on: ["projects-crud", "settings-page"]
+    validation:
+      command: "cd {repo_path} && npm run build"
+      expect_exit_code: 0
+    max_turns: 25
+
+  - id: "polish"
+    name: "UI polish, error boundaries, and loading states"
+    prompt: |
+      Polish the entire app at {repo_path}:
+
+      1. Add a global error boundary (src/app/error.tsx)
+      2. Add loading.tsx files for all dashboard routes
+      3. Add a proper 404 page (src/app/not-found.tsx)
+      4. Review all pages for consistent spacing, typography, and colors
+      5. Ensure all forms have proper validation messages
+      6. Add toast notifications for success/error states (use sonner)
+      7. Make sure dark mode works on all pages
+      8. Add a landing page at src/app/page.tsx with hero, features, pricing
+
+      Install sonner for toast notifications.
+    depends_on: ["analytics-page", "stripe-billing", "events-api"]
+    validation:
+      command: "cd {repo_path} && npm run build"
+      expect_exit_code: 0
+    max_turns: 30
+    priority: "high"
+
+  - id: "readme"
+    name: "Write comprehensive README"
+    prompt: |
+      Write a professional README.md at {repo_path}/README.md.
+
+      Include:
+      - Project overview and screenshot placeholder
+      - Tech stack list
+      - Getting started (prerequisites, env setup, install, run)
+      - Project structure explanation
+      - API documentation for the events endpoint
+      - Deployment guide (Vercel)
+      - Environment variables reference
+
+      Make it look like a real open-source project README.
+    depends_on: ["polish"]
+    validation:
+      command: "test -f {repo_path}/README.md"
+      expect_exit_code: 0
+    max_turns: 10
+    priority: "low"
