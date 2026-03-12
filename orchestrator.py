@@ -654,7 +654,9 @@ class Orchestrator:
         ]
 
         env = os.environ.copy()
-        env["ANTHROPIC_API_KEY"] = ANTHROPIC_API_KEY
+        if ANTHROPIC_API_KEY:
+            env["ANTHROPIC_API_KEY"] = ANTHROPIC_API_KEY
+        # If no API key, Claude Code falls back to OAuth session
 
         phase = "fix" if is_fix else "initial"
         log_path = LOGS_DIR / f"{task_id}_{phase}_{int(time.time())}.log"
